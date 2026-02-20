@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -29,8 +29,30 @@ import {
   View
 } from 'react-native';
 import { Calendar as BigCalendar, Event } from 'react-native-big-calendar';
-import { auth } from '../src/firebase/firebaseConfig';
-import { db } from '../src/firebase/firestore';
+import { auth } from '../../src/firebase/firebaseConfig';
+import { db } from '../../src/firebase/firestore';
+
+
+// ✅ Convierte fecha local a string sin problemas de zona horaria
+function toLocalDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseLocalDate(dateString: string) {
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function convertTo24Hour(time: string) {
+  const [hms, modifier] = time.split(' ');
+  let [hours, minutes] = hms.split(':').map(Number);
+  if (modifier === 'PM' && hours < 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+}
 
 export default function HomeScreen() {
   const [uid, setUid] = useState<string | null>(null);
@@ -49,12 +71,6 @@ export default function HomeScreen() {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const [formVisible, setFormVisible] = useState(false);
 
-  function parseLocalDate(dateString: string) {
-  const [year, month, day] = dateString.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
-
-  
   const coloresDisponibles = ['#1e90ff', '#ff6347', '#32cd32', '#ffa500', '#800080'];
 
   const colors = {
@@ -85,13 +101,8 @@ export default function HomeScreen() {
   }, [darkMode]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        const r = await signInAnonymously(auth);
-        setUid(r.user.uid);
-      } else {
-        setUid(user.uid);
-      }
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) setUid(user.uid);
     });
     return unsub;
   }, []);
@@ -105,25 +116,42 @@ export default function HomeScreen() {
   }, []);
 
   const abrirFormulario = (evento: any = null) => {
-    if (evento) {
-      setEventoSeleccionado(evento);
-      setTitle(evento.title);
-      setDescripcion(evento.description || '');
-      setHora(evento.time ? new Date(`${evento.date}T${convertTo24Hour(evento.time)}`) : null);
-      setFechaSeleccionada(evento.date);
-      setColorSeleccionado(evento.color || coloresDisponibles[0]);
+  if (evento) {
+    setEventoSeleccionado(evento);
+    setTitle(evento.title);
+    setDescripcion(evento.description || '');
+    setFechaSeleccionada(evento.date);
+    setColorSeleccionado(evento.color || coloresDisponibles[0]);
+
+    // ✅ Parseo seguro de la hora
+    if (evento.time && typeof evento.time === 'string') {
+      try {
+        const time24 = convertTo24Hour(evento.time);
+        const [hours, minutes] = time24.split(':').map(Number);
+        if (!isNaN(hours) && !isNaN(minutes)) {
+          const fechaHora = new Date();
+          fechaHora.setHours(hours, minutes, 0, 0);
+          setHora(fechaHora);
+        } else {
+          setHora(new Date());
+        }
+      } catch {
+        setHora(new Date());
+      }
     } else {
-      setEventoSeleccionado(null);
-      setTitle('');
-      setDescripcion('');
       setHora(null);
-      setFechaSeleccionada(null);
-      setColorSeleccionado('');
     }
 
-    setFormVisible(true);
-    Animated.timing(slideAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-  };
+  } else {
+    setEventoSeleccionado(null);
+    setTitle('');
+    setDescripcion('');
+    setHora(null);
+    setColorSeleccionado('');
+  }
+  setFormVisible(true);
+  Animated.timing(slideAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+};
 
   const cerrarFormulario = () => {
     Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
@@ -147,7 +175,6 @@ export default function HomeScreen() {
   };
 
   const crearEvento = async () => {
-    // Validaciones
     if (!title?.trim()) {
       Alert.alert('Campo obligatorio', 'Falta el nombre del evento');
       return;
@@ -162,14 +189,13 @@ export default function HomeScreen() {
     }
 
     const horaString = hora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-    const fecha = fechaSeleccionada;
-    const color = colorSeleccionado || coloresDisponibles[0]; // Default azul
+    const color = colorSeleccionado || coloresDisponibles[0];
 
     if (eventoSeleccionado) {
       await updateDoc(doc(db, 'agenda', eventoSeleccionado.id), {
         title,
         description: descripcion || '',
-        date: fecha,
+        date: fechaSeleccionada,
         time: horaString,
         color,
       });
@@ -177,7 +203,7 @@ export default function HomeScreen() {
       await addDoc(collection(db, 'agenda'), {
         title,
         description: descripcion || '',
-        date: fecha,
+        date: fechaSeleccionada,
         time: horaString,
         color,
         createdBy: uid,
@@ -189,56 +215,43 @@ export default function HomeScreen() {
   };
 
   const eliminarEvento = async (id: string) => {
-    await deleteDoc(doc(db, 'agenda', id));
+    Alert.alert('Eliminar evento', '¿Estás seguro?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: () => deleteDoc(doc(db, 'agenda', id)) },
+    ]);
   };
 
   const eventosDelDia = fechaSeleccionada
     ? eventos.filter((e) => e.date === fechaSeleccionada)
     : [];
 
-const eventosCalendar: Event[] = eventos
-  .map((e) => {
-    // 🔒 VALIDAR FECHA
-    if (!e.date || typeof e.date !== 'string') return null;
+  const eventosCalendar: Event[] = eventos
+    .map((e) => {
+      if (!e.date || typeof e.date !== 'string') return null;
+      const start = parseLocalDate(e.date);
+      if (isNaN(start.getTime())) return null;
 
-    const start = parseLocalDate(e.date);
-
-    if (isNaN(start.getTime())) return null;
-
-    // 🕒 VALIDAR HORA
-    if (e.time && typeof e.time === 'string') {
-      const time24 = convertTo24Hour(e.time); // "19:30:00"
-
-      const parts = time24.split(':').map(Number);
-      if (parts.length >= 2 && !parts.some(isNaN)) {
-        const [hours, minutes] = parts;
-        start.setHours(hours, minutes, 0, 0);
+      if (e.time && typeof e.time === 'string') {
+        const time24 = convertTo24Hour(e.time);
+        const parts = time24.split(':').map(Number);
+        if (parts.length >= 2 && !parts.some(isNaN)) {
+          start.setHours(parts[0], parts[1], 0, 0);
+        }
       }
-    }
 
-    const end = new Date(start);
-    end.setHours(start.getHours() + 1);
+      const end = new Date(start);
+      end.setHours(start.getHours() + 1);
+      if (isNaN(end.getTime())) return null;
 
-    if (isNaN(end.getTime())) return null;
-
-    return {
-      id: e.id,
-      title: e.title ?? 'Evento',
-      start,
-      end,
-      color: e.color || coloresDisponibles[0],
-    };
-  })
-  .filter(Boolean) as Event[];
-
-  // Convierte "hh:mm AM/PM" a formato 24h para Date()
-  function convertTo24Hour(time: string) {
-    const [hms, modifier] = time.split(' ');
-    let [hours, minutes] = hms.split(':').map(Number);
-    if (modifier === 'PM' && hours < 12) hours += 12;
-    if (modifier === 'AM' && hours === 12) hours = 0;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
-  }
+      return {
+        id: e.id,
+        title: e.title ?? 'Evento',
+        start,
+        end,
+        color: e.color || coloresDisponibles[0],
+      };
+    })
+    .filter(Boolean) as Event[];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -278,7 +291,8 @@ const eventosCalendar: Event[] = eventos
           swipeEnabled={false}
           locale="es"
           date={mesVisible}
-          onPressCell={(date) => setFechaSeleccionada(date.toISOString().split('T')[0])}
+          // ✅ BUG FIX: Usar fecha local en vez de toISOString() para evitar desfase de zona horaria
+          onPressCell={(date) => setFechaSeleccionada(toLocalDateString(date))}
           headerContainerStyle={{ backgroundColor: colors.background }}
           headerTextStyle={{ color: colors.text }}
           dayHeaderTextStyle={{ color: colors.text }}
@@ -290,13 +304,13 @@ const eventosCalendar: Event[] = eventos
             padding: 2,
           })}
           monthCellStyle={({ date }) => {
-            const fechaISO = date.toISOString().split('T')[0];
+            const fechaISO = toLocalDateString(date);
             const isSelected = fechaSeleccionada === fechaISO;
             const baseColor = isSelected ? colors.primary : darkMode ? '#2a2a2a' : '#e0e0e0';
             return { backgroundColor: baseColor, borderRadius: isSelected ? 25 : 8, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' };
           }}
           monthCellTextStyle={({ date }) => {
-            const fechaISO = date.toISOString().split('T')[0];
+            const fechaISO = toLocalDateString(date);
             const isSelected = fechaSeleccionada === fechaISO;
             return { color: isSelected ? '#fff' : darkMode ? '#fff' : '#000', fontWeight: isSelected ? 'bold' : 'normal', textAlign: 'center' };
           }}
@@ -321,73 +335,62 @@ const eventosCalendar: Event[] = eventos
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>＋ Nuevo evento</Text>
         </Pressable>
 
-        {/* MENSAJE DEL DÍA Y LISTA DE EVENTOS */}
-    <View style={{ marginTop: 16 }}>
-  {fechaSeleccionada && (
-    <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 12 }}>
-      {eventosDelDia.length > 0
-        ? `Eventos del ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })}`
-        : `No hay eventos para el ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })}`}
-    </Text>
-  )}
-
-  {eventosDelDia.length > 0 &&
-    eventosDelDia.map((item) => (
-      <View
-        key={item.id}
-        style={{
-          backgroundColor: item.color || colors.primary,
-          padding: 16,
-          marginBottom: 12,
-          borderRadius: 16,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.15,
-          shadowRadius: 5,
-          elevation: 5,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{item.title}</Text>
-          <Text style={{ color: '#fff', marginTop: 4 }}>{item.time}</Text>
-          {item.description && (
-            <Text style={{ color: '#fff', marginTop: 2, fontSize: 14 }}>{item.description}</Text>
+        {/* LISTA DE EVENTOS DEL DÍA */}
+        <View style={{ marginTop: 16 }}>
+          {fechaSeleccionada && (
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 12 }}>
+              {eventosDelDia.length > 0
+                ? `Eventos del ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                : `No hay eventos para el ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`}
+            </Text>
           )}
+
+          {eventosDelDia.map((item) => (
+            <View
+              key={item.id}
+              style={{
+                backgroundColor: item.color || colors.primary,
+                padding: 16,
+                marginBottom: 12,
+                borderRadius: 16,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 5,
+                elevation: 5,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{item.title}</Text>
+                <Text style={{ color: '#fff', marginTop: 4 }}>{item.time}</Text>
+                {item.description ? (
+                  <Text style={{ color: '#fff', marginTop: 2, fontSize: 14 }}>{item.description}</Text>
+                ) : null}
+              </View>
+
+              <View style={{ flexDirection: 'row', marginLeft: 10 }}>
+                <TouchableOpacity
+                  onPress={() => abrirFormulario(item)}
+                  style={{ padding: 6, borderRadius: 8, marginRight: 6, backgroundColor: colors.primary }}
+                >
+                  <Ionicons name="pencil-outline" size={20} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => eliminarEvento(item.id)}
+                  style={{ padding: 6, borderRadius: 8, backgroundColor: colors.danger }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
         </View>
-
-        <View style={{ flexDirection: 'row', marginLeft: 10 }}>
-          <TouchableOpacity
-            onPress={() => abrirFormulario(item)}
-            style={{ padding: 6, borderRadius: 8, marginRight: 6, backgroundColor: colors.primary }}
-          >
-            <Ionicons name="pencil-outline" size={20} color="#fff" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => eliminarEvento(item.id)}
-            style={{ padding: 6, borderRadius: 8, backgroundColor: colors.danger }}
-          >
-            <Ionicons name="trash-outline" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    ))}
-</View>
-
       </ScrollView>
 
-      {/* FORMULARIO */}
+      {/* FORMULARIO MODAL */}
       {formVisible && (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView
@@ -419,14 +422,7 @@ const eventosCalendar: Event[] = eventos
                   placeholderTextColor={colors.border}
                   value={title}
                   onChangeText={setTitle}
-                  style={{
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4',
-                    padding: 16,
-                    borderRadius: 14,
-                    color: colors.text,
-                    fontSize: 16,
-                    marginBottom: 16,
-                  }}
+                  style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 16, borderRadius: 14, color: colors.text, fontSize: 16, marginBottom: 16 }}
                 />
 
                 <TextInput
@@ -435,15 +431,7 @@ const eventosCalendar: Event[] = eventos
                   value={descripcion}
                   onChangeText={setDescripcion}
                   multiline
-                  style={{
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4',
-                    padding: 16,
-                    borderRadius: 14,
-                    color: colors.text,
-                    fontSize: 16,
-                    marginBottom: 16,
-                    minHeight: 80,
-                  }}
+                  style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 16, borderRadius: 14, color: colors.text, fontSize: 16, marginBottom: 16, minHeight: 80 }}
                 />
 
                 {/* Selector de color */}
@@ -452,17 +440,7 @@ const eventosCalendar: Event[] = eventos
                     <Pressable
                       key={c}
                       onPress={() => setColorSeleccionado(c)}
-                      style={{
-                        backgroundColor: c,
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        marginRight: 8,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        borderWidth: colorSeleccionado === c ? 2 : 0,
-                        borderColor: '#000',
-                      }}
+                      style={{ backgroundColor: c, width: 32, height: 32, borderRadius: 16, marginRight: 8, justifyContent: 'center', alignItems: 'center', borderWidth: colorSeleccionado === c ? 2 : 0, borderColor: '#000' }}
                     >
                       {colorSeleccionado === c && <Ionicons name="checkmark" size={20} color="#fff" />}
                     </Pressable>
@@ -472,31 +450,25 @@ const eventosCalendar: Event[] = eventos
                 {/* PICKER DE FECHA */}
                 <Pressable
                   onPress={() => setMostrarFecha(true)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4',
-                    padding: 14,
-                    borderRadius: 14,
-                    marginBottom: 16,
-                  }}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 14, borderRadius: 14, marginBottom: 16 }}
                 >
                   <Ionicons name="calendar-outline" size={20} color={colors.primary} />
                   <Text style={{ marginLeft: 12, color: colors.text, fontSize: 16 }}>
-                    {fechaSeleccionada ?? new Date().toISOString().split('T')[0]}
+                    {fechaSeleccionada ?? toLocalDateString(new Date())}
                   </Text>
                 </Pressable>
 
                 {mostrarFecha && (
                   <DateTimePicker
-                    value={fechaSeleccionada ? new Date(fechaSeleccionada) : new Date()}
+                    value={fechaSeleccionada ? parseLocalDate(fechaSeleccionada) : new Date()}
                     mode="date"
                     display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
                     minimumDate={new Date()}
                     maximumDate={new Date(new Date().getFullYear() + 1, 11, 31)}
                     onChange={(event, selectedDate) => {
                       setMostrarFecha(false);
-                      if (selectedDate) setFechaSeleccionada(selectedDate.toISOString().split('T')[0]);
+                      // ✅ BUG FIX: Usar fecha local para evitar desfase
+                      if (selectedDate) setFechaSeleccionada(toLocalDateString(selectedDate));
                     }}
                   />
                 )}
@@ -504,14 +476,7 @@ const eventosCalendar: Event[] = eventos
                 {/* PICKER DE HORA */}
                 <Pressable
                   onPress={() => setMostrarHora(true)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4',
-                    padding: 14,
-                    borderRadius: 14,
-                    marginBottom: 24,
-                  }}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 14, borderRadius: 14, marginBottom: 24 }}
                 >
                   <Ionicons name="time-outline" size={20} color={colors.primary} />
                   <Text style={{ marginLeft: 12, color: colors.text, fontSize: 16 }}>
@@ -526,10 +491,7 @@ const eventosCalendar: Event[] = eventos
                     is24Hour={false}
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                     onChange={(event, selectedTime) => {
-                      if (event.type === 'dismissed') {
-                        setMostrarHora(false);
-                        return;
-                      }
+                      if (event.type === 'dismissed') { setMostrarHora(false); return; }
                       if (selectedTime) setHora(selectedTime);
                       setMostrarHora(false);
                     }}
@@ -538,13 +500,7 @@ const eventosCalendar: Event[] = eventos
 
                 <Pressable
                   onPress={crearEvento}
-                  style={{
-                    backgroundColor: colors.primary,
-                    paddingVertical: 16,
-                    borderRadius: 16,
-                    alignItems: 'center',
-                    marginBottom: 12,
-                  }}
+                  style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginBottom: 12 }}
                 >
                   <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Guardar</Text>
                 </Pressable>
