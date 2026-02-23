@@ -1,20 +1,32 @@
 import {
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-    UserCredential,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  UserCredential,
 } from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth } from './firebaseConfig';
+import { db } from './firestore';
 
-// Registrar nuevo usuario
+// Registrar nuevo usuario - siempre con rol "usuario"
 export const registrarUsuario = async (
   email: string,
-  password: string
+  password: string,
+  nombre: string = ''
 ): Promise<UserCredential> => {
-  return await createUserWithEmailAndPassword(auth, email, password);
+  const credencial = await createUserWithEmailAndPassword(auth, email, password);
+
+  await setDoc(doc(db, 'usuarios', credencial.user.uid), {
+    email,
+    nombre: nombre || email.split('@')[0],
+    rol: 'usuario',
+    activo: true,
+    creadoEn: serverTimestamp(),
+  });
+
+  return credencial;
 };
 
-// Iniciar sesión
 export const iniciarSesion = async (
   email: string,
   password: string
@@ -22,7 +34,6 @@ export const iniciarSesion = async (
   return await signInWithEmailAndPassword(auth, email, password);
 };
 
-// Cerrar sesión
 export const cerrarSesion = async (): Promise<void> => {
   return await signOut(auth);
 };

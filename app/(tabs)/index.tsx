@@ -1,39 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { onAuthStateChanged } from 'firebase/auth';
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc
-} from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Animated,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View
-} from 'react-native';
+import { Animated, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { Calendar as BigCalendar, Event } from 'react-native-big-calendar';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ConfirmModal } from '../../src/components/ConfirmModal';
+import { Toast, useToast } from '../../src/components/Toast';
+import { useTema } from '../../src/context/TemaContext';
 import { auth } from '../../src/firebase/firebaseConfig';
 import { db } from '../../src/firebase/firestore';
+import { useUsuario } from '../../src/hooks/useUsuario';
 
-
-// ✅ Convierte fecha local a string sin problemas de zona horaria
 function toLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -55,13 +34,17 @@ function convertTo24Hour(time: string) {
 }
 
 export default function HomeScreen() {
+  const { colors, darkMode } = useTema();
+  const { usuario } = useUsuario();
+  const { toast, ocultar, exito, error, advertencia } = useToast();
+
   const [uid, setUid] = useState<string | null>(null);
   const [eventos, setEventos] = useState<any[]>([]);
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null);
   const [mesVisible, setMesVisible] = useState<Date>(new Date());
   const [nombreMesActual, setNombreMesActual] = useState('');
-  const [darkMode, setDarkMode] = useState(false);
   const [eventoSeleccionado, setEventoSeleccionado] = useState<any>(null);
+  const [eventoAEliminar, setEventoAEliminar] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [hora, setHora] = useState<Date | null>(null);
@@ -73,14 +56,11 @@ export default function HomeScreen() {
 
   const coloresDisponibles = ['#1e90ff', '#ff6347', '#32cd32', '#ffa500', '#800080'];
 
-  const colors = {
-    background: darkMode ? '#121212' : '#f0f0f0',
-    card: darkMode ? '#1e1e1e' : '#fff',
-    text: darkMode ? '#fff' : '#000',
-    border: darkMode ? '#555' : '#ccc',
-    primary: '#1e90ff',
-    overlay: '#00000055',
-    danger: '#ff4d4f',
+  const saludo = () => {
+    const hora = new Date().getHours();
+    if (hora < 12) return 'Buenos días';
+    if (hora < 19) return 'Buenas tardes';
+    return 'Buenas noches';
   };
 
   const nombreMes = (fecha: Date) =>
@@ -89,21 +69,7 @@ export default function HomeScreen() {
   useEffect(() => setNombreMesActual(nombreMes(mesVisible)), [mesVisible]);
 
   useEffect(() => {
-    const cargarTema = async () => {
-      const tema = await AsyncStorage.getItem('darkMode');
-      if (tema) setDarkMode(tema === 'true');
-    };
-    cargarTema();
-  }, []);
-
-  useEffect(() => {
-    AsyncStorage.setItem('darkMode', darkMode ? 'true' : 'false');
-  }, [darkMode]);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) setUid(user.uid);
-    });
+    const unsub = onAuthStateChanged(auth, (user) => { if (user) setUid(user.uid); });
     return unsub;
   }, []);
 
@@ -116,45 +82,34 @@ export default function HomeScreen() {
   }, []);
 
   const abrirFormulario = (evento: any = null) => {
-  if (evento) {
-    setEventoSeleccionado(evento);
-    setTitle(evento.title);
-    setDescripcion(evento.description || '');
-    setFechaSeleccionada(evento.date);
-    setColorSeleccionado(evento.color || coloresDisponibles[0]);
-
-    // ✅ Parseo seguro de la hora
-    if (evento.time && typeof evento.time === 'string') {
-      try {
-        const time24 = convertTo24Hour(evento.time);
-        const [hours, minutes] = time24.split(':').map(Number);
-        if (!isNaN(hours) && !isNaN(minutes)) {
-          const fechaHora = new Date();
-          fechaHora.setHours(hours, minutes, 0, 0);
-          setHora(fechaHora);
-        } else {
-          setHora(new Date());
-        }
-      } catch {
-        setHora(new Date());
-      }
+    if (evento) {
+      setEventoSeleccionado(evento);
+      setTitle(evento.title);
+      setDescripcion(evento.description || '');
+      setFechaSeleccionada(evento.date);
+      setColorSeleccionado(evento.color || coloresDisponibles[0]);
+      if (evento.time && typeof evento.time === 'string') {
+        try {
+          const time24 = convertTo24Hour(evento.time);
+          const [h, m] = time24.split(':').map(Number);
+          if (!isNaN(h) && !isNaN(m)) {
+            const d = new Date(); d.setHours(h, m, 0, 0); setHora(d);
+          } else setHora(new Date());
+        } catch { setHora(new Date()); }
+      } else setHora(null);
     } else {
+      setEventoSeleccionado(null);
+      setTitle('');
+      setDescripcion('');
       setHora(null);
+      setColorSeleccionado('');
     }
-
-  } else {
-    setEventoSeleccionado(null);
-    setTitle('');
-    setDescripcion('');
-    setHora(null);
-    setColorSeleccionado('');
-  }
-  setFormVisible(true);
-  Animated.timing(slideAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-};
+    setFormVisible(true);
+    Animated.spring(slideAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 12 }).start();
+  };
 
   const cerrarFormulario = () => {
-    Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+    Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => {
       setFormVisible(false);
       setTitle('');
       setDescripcion('');
@@ -166,222 +121,138 @@ export default function HomeScreen() {
     });
   };
 
-  const slideInterpolate = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [600, 0] });
+  const slideInterpolate = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [700, 0] });
 
-  const cambiarMes = (incremento: number) => {
+  const cambiarMes = (inc: number) => {
     const nuevoMes = new Date(mesVisible);
-    nuevoMes.setMonth(nuevoMes.getMonth() + incremento);
+    nuevoMes.setMonth(nuevoMes.getMonth() + inc);
     setMesVisible(nuevoMes);
   };
 
   const crearEvento = async () => {
-    if (!title?.trim()) {
-      Alert.alert('Campo obligatorio', 'Falta el nombre del evento');
-      return;
-    }
-    if (!fechaSeleccionada) {
-      Alert.alert('Campo obligatorio', 'Falta la fecha del evento');
-      return;
-    }
-    if (!hora) {
-      Alert.alert('Campo obligatorio', 'Falta la hora del evento');
-      return;
-    }
+    if (!title?.trim()) { advertencia('Falta el nombre del evento'); return; }
+    if (!fechaSeleccionada) { advertencia('Selecciona la fecha del evento'); return; }
+    if (!hora) { advertencia('Selecciona la hora del evento'); return; }
 
     const horaString = hora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const color = colorSeleccionado || coloresDisponibles[0];
 
-    if (eventoSeleccionado) {
-      await updateDoc(doc(db, 'agenda', eventoSeleccionado.id), {
-        title,
-        description: descripcion || '',
-        date: fechaSeleccionada,
-        time: horaString,
-        color,
-      });
-    } else {
-      await addDoc(collection(db, 'agenda'), {
-        title,
-        description: descripcion || '',
-        date: fechaSeleccionada,
-        time: horaString,
-        color,
-        createdBy: uid,
-        createdAt: serverTimestamp(),
-      });
-    }
-
-    cerrarFormulario();
-  };
-
-  const eliminarEvento = async (id: string) => {
-    Alert.alert('Eliminar evento', '¿Estás seguro?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => deleteDoc(doc(db, 'agenda', id)) },
-    ]);
-  };
-
-  const eventosDelDia = fechaSeleccionada
-    ? eventos.filter((e) => e.date === fechaSeleccionada)
-    : [];
-
-  const eventosCalendar: Event[] = eventos
-    .map((e) => {
-      if (!e.date || typeof e.date !== 'string') return null;
-      const start = parseLocalDate(e.date);
-      if (isNaN(start.getTime())) return null;
-
-      if (e.time && typeof e.time === 'string') {
-        const time24 = convertTo24Hour(e.time);
-        const parts = time24.split(':').map(Number);
-        if (parts.length >= 2 && !parts.some(isNaN)) {
-          start.setHours(parts[0], parts[1], 0, 0);
-        }
+    try {
+      if (eventoSeleccionado) {
+        await updateDoc(doc(db, 'agenda', eventoSeleccionado.id), { title, description: descripcion || '', date: fechaSeleccionada, time: horaString, color });
+        exito('Evento actualizado correctamente');
+      } else {
+        await addDoc(collection(db, 'agenda'), { title, description: descripcion || '', date: fechaSeleccionada, time: horaString, color, createdBy: uid, createdAt: serverTimestamp() });
+        exito('Evento creado correctamente');
       }
+      cerrarFormulario();
+    } catch {
+      error('No se pudo guardar el evento');
+    }
+  };
 
-      const end = new Date(start);
-      end.setHours(start.getHours() + 1);
-      if (isNaN(end.getTime())) return null;
+  const confirmarEliminar = (id: string) => setEventoAEliminar(id);
 
-      return {
-        id: e.id,
-        title: e.title ?? 'Evento',
-        start,
-        end,
-        color: e.color || coloresDisponibles[0],
-      };
-    })
-    .filter(Boolean) as Event[];
+  const eliminarEvento = async () => {
+    if (!eventoAEliminar) return;
+    try {
+      await deleteDoc(doc(db, 'agenda', eventoAEliminar));
+      exito('Evento eliminado');
+    } catch {
+      error('No se pudo eliminar el evento');
+    } finally {
+      setEventoAEliminar(null);
+    }
+  };
+
+  const eventosDelDia = fechaSeleccionada ? eventos.filter((e) => e.date === fechaSeleccionada) : [];
+
+  const eventosCalendar: Event[] = eventos.map((e) => {
+    if (!e.date || typeof e.date !== 'string') return null;
+    const start = parseLocalDate(e.date);
+    if (isNaN(start.getTime())) return null;
+    if (e.time && typeof e.time === 'string') {
+      const time24 = convertTo24Hour(e.time);
+      const parts = time24.split(':').map(Number);
+      if (parts.length >= 2 && !parts.some(isNaN)) start.setHours(parts[0], parts[1], 0, 0);
+    }
+    const end = new Date(start);
+    end.setHours(start.getHours() + 1);
+    if (isNaN(end.getTime())) return null;
+    return { id: e.id, title: e.title ?? 'Evento', start, end, color: e.color || coloresDisponibles[0] };
+  }).filter(Boolean) as Event[];
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* HEADER */}
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          paddingHorizontal: 16,
-          paddingBottom: 16,
-          paddingTop: 36,
-        }}
-      >
-        <Text style={{ fontSize: 22, color: colors.text, fontWeight: 'bold' }}>Agenda</Text>
-        <Pressable onPress={() => setDarkMode(!darkMode)}>
-          <Text style={{ fontSize: 22 }}>{darkMode ? '☀️' : '🌙'}</Text>
-        </Pressable>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <Toast mensaje={toast.mensaje} tipo={toast.tipo} visible={toast.visible} onHide={ocultar} />
+
+      {/* BIENVENIDA */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+        <Text style={{ fontSize: 14, color: colors.subtext }}>{saludo()},</Text>
+        <Text style={{ fontSize: 22, fontWeight: 'bold', color: colors.text }}>
+          {usuario?.nombre ?? 'Usuario'} 👋
+        </Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {/* NOMBRE DEL MES CON FLECHAS */}
+        {/* MES */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Pressable onPress={() => cambiarMes(-1)}>
+          <Pressable onPress={() => cambiarMes(-1)} style={{ padding: 8 }}>
             <Text style={{ fontSize: 24, color: colors.text }}>←</Text>
           </Pressable>
-          <Text style={{ fontSize: 20, fontWeight: 'bold', color: colors.text }}>{nombreMesActual}</Text>
-          <Pressable onPress={() => cambiarMes(1)}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text }}>{nombreMesActual}</Text>
+          <Pressable onPress={() => cambiarMes(1)} style={{ padding: 8 }}>
             <Text style={{ fontSize: 24, color: colors.text }}>→</Text>
           </Pressable>
         </View>
 
         {/* CALENDARIO */}
         <BigCalendar
-          events={eventosCalendar}
-          height={400}
-          mode="month"
-          swipeEnabled={false}
-          locale="es"
-          date={mesVisible}
-          // ✅ BUG FIX: Usar fecha local en vez de toISOString() para evitar desfase de zona horaria
+          events={eventosCalendar} height={420} mode="month" swipeEnabled={false} locale="es" date={mesVisible}
           onPressCell={(date) => setFechaSeleccionada(toLocalDateString(date))}
           headerContainerStyle={{ backgroundColor: colors.background }}
           headerTextStyle={{ color: colors.text }}
           dayHeaderTextStyle={{ color: colors.text }}
           hourStyle={{ color: colors.text }}
-          eventCellStyle={(event) => ({
-            backgroundColor: event.color,
-            color: '#fff',
-            borderRadius: 8,
-            padding: 2,
-          })}
+          eventCellStyle={(event) => ({ backgroundColor: event.color, color: '#fff', borderRadius: 8, padding: 2 })}
           monthCellStyle={({ date }) => {
             const fechaISO = toLocalDateString(date);
             const isSelected = fechaSeleccionada === fechaISO;
-            const baseColor = isSelected ? colors.primary : darkMode ? '#2a2a2a' : '#e0e0e0';
-            return { backgroundColor: baseColor, borderRadius: isSelected ? 25 : 8, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' };
+            return { backgroundColor: isSelected ? colors.primary : darkMode ? '#2a2a2a' : '#e0e0e0', borderRadius: isSelected ? 25 : 8, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' };
           }}
           monthCellTextStyle={({ date }) => {
             const fechaISO = toLocalDateString(date);
             const isSelected = fechaSeleccionada === fechaISO;
-            return { color: isSelected ? '#fff' : darkMode ? '#fff' : '#000', fontWeight: isSelected ? 'bold' : 'normal', textAlign: 'center' };
+            return { color: isSelected ? '#fff' : colors.text, fontWeight: isSelected ? 'bold' : 'normal', textAlign: 'center' };
           }}
         />
 
         {/* BOTÓN NUEVO EVENTO */}
-        <Pressable
-          onPress={() => abrirFormulario()}
-          style={{
-            marginTop: 16,
-            backgroundColor: colors.primary,
-            paddingVertical: 14,
-            borderRadius: 12,
-            alignItems: 'center',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 3 },
-            shadowOpacity: 0.2,
-            shadowRadius: 4,
-            elevation: 5,
-          }}
-        >
+        <Pressable onPress={() => abrirFormulario()} style={{ marginTop: 16, backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center', elevation: 5 }}>
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>＋ Nuevo evento</Text>
         </Pressable>
 
-        {/* LISTA DE EVENTOS DEL DÍA */}
+        {/* LISTA EVENTOS */}
         <View style={{ marginTop: 16 }}>
           {fechaSeleccionada && (
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 12 }}>
+            <Text style={{ fontSize: 17, fontWeight: 'bold', color: colors.text, marginBottom: 12 }}>
               {eventosDelDia.length > 0
-                ? `Eventos del ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`
-                : `No hay eventos para el ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`}
+                ? `📅 ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                : `Sin eventos — ${parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}`}
             </Text>
           )}
-
           {eventosDelDia.map((item) => (
-            <View
-              key={item.id}
-              style={{
-                backgroundColor: item.color || colors.primary,
-                padding: 16,
-                marginBottom: 12,
-                borderRadius: 16,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.15,
-                shadowRadius: 5,
-                elevation: 5,
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
+            <View key={item.id} style={{ backgroundColor: item.color || colors.primary, padding: 16, marginBottom: 12, borderRadius: 16, elevation: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{item.title}</Text>
-                <Text style={{ color: '#fff', marginTop: 4 }}>{item.time}</Text>
-                {item.description ? (
-                  <Text style={{ color: '#fff', marginTop: 2, fontSize: 14 }}>{item.description}</Text>
-                ) : null}
+                <Text style={{ color: '#fff', marginTop: 4, opacity: 0.9 }}>🕐 {item.time}</Text>
+                {item.description ? <Text style={{ color: '#fff', marginTop: 2, fontSize: 14, opacity: 0.9 }}>{item.description}</Text> : null}
               </View>
-
-              <View style={{ flexDirection: 'row', marginLeft: 10 }}>
-                <TouchableOpacity
-                  onPress={() => abrirFormulario(item)}
-                  style={{ padding: 6, borderRadius: 8, marginRight: 6, backgroundColor: colors.primary }}
-                >
+              <View style={{ flexDirection: 'row', marginLeft: 10, gap: 8 }}>
+                <TouchableOpacity onPress={() => abrirFormulario(item)} style={{ padding: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)' }}>
                   <Ionicons name="pencil-outline" size={20} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => eliminarEvento(item.id)}
-                  style={{ padding: 6, borderRadius: 8, backgroundColor: colors.danger }}
-                >
+                <TouchableOpacity onPress={() => confirmarEliminar(item.id)} style={{ padding: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)' }}>
                   <Ionicons name="trash-outline" size={20} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -390,129 +261,83 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* FORMULARIO MODAL */}
+      {/* Confirm eliminar */}
+      <ConfirmModal
+        visible={!!eventoAEliminar}
+        titulo="Eliminar evento"
+        mensaje="¿Estás seguro que deseas eliminar este evento? Esta acción no se puede deshacer."
+        tipo="danger"
+        textoConfirmar="Eliminar"
+        onCancelar={() => setEventoAEliminar(null)}
+        onConfirmar={eliminarEvento}
+      />
+
+      {/* FORMULARIO */}
       {formVisible && (
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{ position: 'absolute', bottom: 0, left: 0, right: 0, top: 0, backgroundColor: colors.overlay, justifyContent: 'flex-end' }}
-          >
-            <Animated.View
-              style={{
-                transform: [{ translateY: slideInterpolate }],
-                backgroundColor: colors.card,
-                borderTopLeftRadius: 25,
-                borderTopRightRadius: 25,
-                padding: 24,
-                maxHeight: '90%',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: -5 },
-                shadowOpacity: 0.25,
-                shadowRadius: 10,
-                elevation: 10,
-              }}
-            >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, top: 0, backgroundColor: colors.overlay, justifyContent: 'flex-end' }}>
+            <Animated.View style={{ transform: [{ translateY: slideInterpolate }], backgroundColor: colors.card, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 24, maxHeight: '90%', elevation: 20 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={{ fontSize: 22, fontWeight: 'bold', color: colors.text, marginBottom: 20 }}>
-                  {eventoSeleccionado ? 'Editar Evento' : 'Nuevo Evento'}
+                  {eventoSeleccionado ? '✏️ Editar Evento' : '✨ Nuevo Evento'}
                 </Text>
 
-                <TextInput
-                  placeholder="Título *"
-                  placeholderTextColor={colors.border}
-                  value={title}
-                  onChangeText={setTitle}
-                  style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 16, borderRadius: 14, color: colors.text, fontSize: 16, marginBottom: 16 }}
-                />
+                <TextInput placeholder="Título del evento *" placeholderTextColor={colors.border} value={title} onChangeText={setTitle}
+                  style={{ backgroundColor: colors.input, padding: 16, borderRadius: 14, color: colors.text, fontSize: 16, marginBottom: 16 }} />
 
-                <TextInput
-                  placeholder="Descripción (opcional)"
-                  placeholderTextColor={colors.border}
-                  value={descripcion}
-                  onChangeText={setDescripcion}
-                  multiline
-                  style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 16, borderRadius: 14, color: colors.text, fontSize: 16, marginBottom: 16, minHeight: 80 }}
-                />
+                <TextInput placeholder="Descripción (opcional)" placeholderTextColor={colors.border} value={descripcion} onChangeText={setDescripcion} multiline
+                  style={{ backgroundColor: colors.input, padding: 16, borderRadius: 14, color: colors.text, fontSize: 16, marginBottom: 16, minHeight: 80 }} />
 
-                {/* Selector de color */}
-                <View style={{ flexDirection: 'row', marginBottom: 16 }}>
+                {/* Colores */}
+                <Text style={{ color: colors.subtext, fontSize: 13, marginBottom: 10 }}>Color del evento</Text>
+                <View style={{ flexDirection: 'row', marginBottom: 16, gap: 8 }}>
                   {coloresDisponibles.map((c) => (
-                    <Pressable
-                      key={c}
-                      onPress={() => setColorSeleccionado(c)}
-                      style={{ backgroundColor: c, width: 32, height: 32, borderRadius: 16, marginRight: 8, justifyContent: 'center', alignItems: 'center', borderWidth: colorSeleccionado === c ? 2 : 0, borderColor: '#000' }}
-                    >
+                    <Pressable key={c} onPress={() => setColorSeleccionado(c)}
+                      style={{ backgroundColor: c, width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: colorSeleccionado === c ? 3 : 0, borderColor: '#fff', shadowColor: c, shadowOpacity: 0.5, shadowRadius: 4, elevation: 3 }}>
                       {colorSeleccionado === c && <Ionicons name="checkmark" size={20} color="#fff" />}
                     </Pressable>
                   ))}
                 </View>
 
-                {/* PICKER DE FECHA */}
-                <Pressable
-                  onPress={() => setMostrarFecha(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 14, borderRadius: 14, marginBottom: 16 }}
-                >
+                {/* Fecha */}
+                <Pressable onPress={() => setMostrarFecha(true)} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.input, padding: 14, borderRadius: 14, marginBottom: 12 }}>
                   <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-                  <Text style={{ marginLeft: 12, color: colors.text, fontSize: 16 }}>
-                    {fechaSeleccionada ?? toLocalDateString(new Date())}
+                  <Text style={{ marginLeft: 12, color: fechaSeleccionada ? colors.text : colors.subtext, fontSize: 16 }}>
+                    {fechaSeleccionada ? parseLocalDate(fechaSeleccionada).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Seleccionar fecha'}
                   </Text>
                 </Pressable>
-
                 {mostrarFecha && (
-                  <DateTimePicker
-                    value={fechaSeleccionada ? parseLocalDate(fechaSeleccionada) : new Date()}
-                    mode="date"
+                  <DateTimePicker value={fechaSeleccionada ? parseLocalDate(fechaSeleccionada) : new Date()} mode="date"
                     display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
-                    minimumDate={new Date()}
-                    maximumDate={new Date(new Date().getFullYear() + 1, 11, 31)}
-                    onChange={(event, selectedDate) => {
-                      setMostrarFecha(false);
-                      // ✅ BUG FIX: Usar fecha local para evitar desfase
-                      if (selectedDate) setFechaSeleccionada(toLocalDateString(selectedDate));
-                    }}
-                  />
+                    onChange={(event, selectedDate) => { setMostrarFecha(false); if (selectedDate) setFechaSeleccionada(toLocalDateString(selectedDate)); }} />
                 )}
 
-                {/* PICKER DE HORA */}
-                <Pressable
-                  onPress={() => setMostrarHora(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: darkMode ? '#2a2a2a' : '#f4f4f4', padding: 14, borderRadius: 14, marginBottom: 24 }}
-                >
+                {/* Hora */}
+                <Pressable onPress={() => setMostrarHora(true)} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.input, padding: 14, borderRadius: 14, marginBottom: 24 }}>
                   <Ionicons name="time-outline" size={20} color={colors.primary} />
-                  <Text style={{ marginLeft: 12, color: colors.text, fontSize: 16 }}>
+                  <Text style={{ marginLeft: 12, color: hora ? colors.text : colors.subtext, fontSize: 16 }}>
                     {hora ? hora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) : 'Seleccionar hora'}
                   </Text>
                 </Pressable>
-
                 {mostrarHora && (
-                  <DateTimePicker
-                    value={hora ?? new Date()}
-                    mode="time"
-                    is24Hour={false}
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={(event, selectedTime) => {
-                      if (event.type === 'dismissed') { setMostrarHora(false); return; }
-                      if (selectedTime) setHora(selectedTime);
-                      setMostrarHora(false);
-                    }}
-                  />
+                  <DateTimePicker value={hora ?? new Date()} mode="time" is24Hour={false} display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedTime) => { if (event.type === 'dismissed') { setMostrarHora(false); return; } if (selectedTime) setHora(selectedTime); setMostrarHora(false); }} />
                 )}
 
-                <Pressable
-                  onPress={crearEvento}
-                  style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginBottom: 12 }}
-                >
-                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Guardar</Text>
+                <Pressable onPress={crearEvento} style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginBottom: 12, elevation: 4 }}>
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+                    {eventoSeleccionado ? 'Actualizar evento' : 'Crear evento'}
+                  </Text>
                 </Pressable>
-
-                <Pressable onPress={cerrarFormulario}>
-                  <Text style={{ color: 'red', textAlign: 'center', fontSize: 16 }}>Cancelar</Text>
+                <Pressable onPress={cerrarFormulario} style={{ paddingVertical: 12, alignItems: 'center' }}>
+                  <Text style={{ color: colors.subtext, fontSize: 16 }}>Cancelar</Text>
                 </Pressable>
               </ScrollView>
             </Animated.View>
           </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
       )}
-    </View>
+    </SafeAreaView>
   );
 }

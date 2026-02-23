@@ -1,8 +1,11 @@
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Alert, View } from 'react-native';
+import { TemaProvider } from '../src/context/TemaContext';
 import { auth } from '../src/firebase/firebaseConfig';
+import { db } from '../src/firebase/firestore';
 
 export default function RootLayout() {
   const [usuario, setUsuario] = useState<any>(undefined);
@@ -10,14 +13,34 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setUsuario(user);
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setUsuario(null);
+        return;
+      }
+
+      // Verificar si el usuario está activo en Firestore
+      try {
+        const snap = await getDoc(doc(db, 'usuarios', user.uid));
+        if (snap.exists() && snap.data().activo === false) {
+          await signOut(auth);
+          Alert.alert(
+            'Acceso denegado',
+            'Tu cuenta ha sido desactivada. Contacta al administrador.'
+          );
+          setUsuario(null);
+        } else {
+          setUsuario(user);
+        }
+      } catch {
+        // Si hay error leyendo Firestore, igual dejar pasar
+        setUsuario(user);
+      }
     });
     return unsub;
   }, []);
 
   useEffect(() => {
-    // undefined = todavía cargando, null = no autenticado, objeto = autenticado
     if (usuario === undefined) return;
 
     const enTabs = segments[0] === '(tabs)';
@@ -31,7 +54,6 @@ export default function RootLayout() {
     }
   }, [usuario, segments]);
 
-  // Mostrar loading solo mientras no sabemos el estado
   if (usuario === undefined) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a2e' }}>
@@ -40,5 +62,9 @@ export default function RootLayout() {
     );
   }
 
-  return <Slot />;
+  return (
+    <TemaProvider>
+      <Slot />
+    </TemaProvider>
+  );
 }
