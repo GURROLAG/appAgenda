@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Linking from 'expo-linking';
 import {
   addDoc, collection, deleteDoc, doc,
@@ -17,6 +18,7 @@ import { Toast, useToast } from '../../src/components/Toast';
 import { useTema } from '../../src/context/TemaContext';
 import { db } from '../../src/firebase/firestore';
 import { useUsuario } from '../../src/hooks/useUsuario';
+import { ArchivoSubido, borrarArchivo, formatearTamano, iconoArchivo, subirArchivo } from '../../src/utils/cloudinary';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -28,13 +30,13 @@ interface Nota {
   id: string;
   titulo: string;
   contenido: string;
-  links?: string[];
+  archivos?: ArchivoSubido[];  // archivos subidos a Cloudinary
   categoria: Categoria;
   fechaManual: string;
   creadoPor: string;
   nombreAutor: string;
-  tipo: TipoNota;           // 'privado' | 'general' | 'compartido'
-  compartidoCon: string[];  // UIDs de usuarios con acceso
+  tipo: TipoNota;
+  compartidoCon: string[];
   creadoEn: any;
 }
 
@@ -56,14 +58,6 @@ const CATEGORIAS: { value: Categoria; label: string; icono: string; color: strin
 const getCat = (v: Categoria) => CATEGORIAS.find((c) => c.value === v) ?? CATEGORIAS[0];
 
 // ─── Servicios de archivo ────────────────────────────────────────────────────
-
-const SERVICIOS_ARCHIVO = [
-  { label: 'Google Drive', icono: '📁', color: '#4285f4', url: 'https://drive.google.com' },
-  { label: 'Dropbox',      icono: '📦', color: '#0061ff', url: 'https://www.dropbox.com' },
-  { label: 'OneDrive',     icono: '🔷', color: '#0078d4', url: 'https://onedrive.live.com' },
-  { label: 'Cloudinary',   icono: '🖼️', color: '#3448c5', url: 'https://cloudinary.com' },
-  { label: 'WeTransfer',   icono: '✈️', color: '#28c3a5', url: 'https://wetransfer.com' },
-];
 
 // ─── Tarjeta de nota ─────────────────────────────────────────────────────────
 
@@ -134,19 +128,12 @@ function TarjetaNota({
       ) : null}
 
       {/* Links */}
-      {nota.links && nota.links.length > 0 ? (
-        <View style={{ gap: 6, marginTop: 4 }}>
-          {nota.links.map((url, idx) => (
-            <TouchableOpacity
-              key={idx}
-              onPress={() => Linking.openURL(url.startsWith('http') ? url : `https://${url}`)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#eff6ff', padding: 10, borderRadius: 10 }}
-            >
-              <Ionicons name="link-outline" size={16} color="#3b82f6" />
-              <Text style={{ color: '#3b82f6', fontSize: 13, flex: 1 }} numberOfLines={1}>{url}</Text>
-              <Ionicons name="open-outline" size={14} color="#3b82f6" />
-            </TouchableOpacity>
-          ))}
+      {nota.archivos && nota.archivos.length > 0 ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: colors.input, padding: 8, borderRadius: 10 }}>
+          <Ionicons name="attach-outline" size={15} color={colors.subtext} />
+          <Text style={{ color: colors.subtext, fontSize: 12 }}>
+            {nota.archivos.length} {nota.archivos.length === 1 ? 'archivo adjunto' : 'archivos adjuntos'} — toca para ver
+          </Text>
         </View>
       ) : null}
 
@@ -209,8 +196,8 @@ export default function DocumentosScreen() {
   const [editando, setEditando] = useState<Nota | null>(null);
   const [titulo, setTitulo] = useState('');
   const [contenido, setContenido] = useState('');
-  const [links, setLinks] = useState<string[]>([]);
-  const [linkInput, setLinkInput] = useState('');
+  const [archivos, setArchivos] = useState<ArchivoSubido[]>([]);
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
   const [categoria, setCategoria] = useState<Categoria>('nota');
   const [fechaManual, setFechaManual] = useState('');
   const [compartidoCon, setCompartidoCon] = useState<string[]>([]);
@@ -292,15 +279,36 @@ export default function DocumentosScreen() {
     return `${hoy.getDate().toString().padStart(2, '0')}/${(hoy.getMonth() + 1).toString().padStart(2, '0')}/${hoy.getFullYear()}`;
   };
 
-  const agregarLink = () => {
-    const url = linkInput.trim();
-    if (!url) return;
-    if (links.includes(url)) { advertencia('Ese link ya fue agregado'); return; }
-    setLinks([...links, url]);
-    setLinkInput('');
+  const seleccionarArchivo = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      setSubiendoArchivo(true);
+      const subido = await subirArchivo(asset.uri, asset.name, asset.mimeType ?? 'application/octet-stream');
+      if (subido) {
+        setArchivos((prev) => [...prev, subido]);
+        exito(`✅ ${asset.name} subido correctamente`);
+      } else {
+        error('No se pudo subir el archivo, intenta de nuevo');
+      }
+    } catch (e) {
+      error('Error al seleccionar el archivo');
+    } finally {
+      setSubiendoArchivo(false);
+    }
   };
 
-  const eliminarLink = (idx: number) => setLinks(links.filter((_, i) => i !== idx));
+  const eliminarArchivoLocal = async (idx: number) => {
+    const archivo = archivos[idx];
+    // Borrar de Cloudinary
+    await borrarArchivo(archivo.publicId);
+    setArchivos((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const toggleUsuario = (uid: string) => {
     setCompartidoCon((prev) =>
@@ -315,8 +323,7 @@ export default function DocumentosScreen() {
       setEditando(nota);
       setTitulo(nota.titulo);
       setContenido(nota.contenido || '');
-      setLinks(nota.links || []);
-      setLinkInput('');
+      setArchivos(nota.archivos || []);
       setCategoria(nota.categoria);
       setFechaManual(nota.fechaManual);
       setCompartidoCon(nota.compartidoCon || []);
@@ -324,8 +331,7 @@ export default function DocumentosScreen() {
       setEditando(null);
       setTitulo('');
       setContenido('');
-      setLinks([]);
-      setLinkInput('');
+      setArchivos([]);
       setCategoria('nota');
       setFechaManual(fechaHoy());
       setCompartidoCon([]);
@@ -347,7 +353,7 @@ export default function DocumentosScreen() {
       const datos = {
         titulo: titulo.trim(),
         contenido: contenido.trim(),
-        links,
+        archivos,
         categoria,
         fechaManual: fechaManual.trim(),
         tipo: tabActivo as TipoNota,
@@ -376,8 +382,12 @@ export default function DocumentosScreen() {
   const eliminar = async () => {
     if (!notaAEliminar) return;
     try {
+      // Borrar archivos de Cloudinary primero
+      const archivosNota = notaAEliminar.archivos || [];
+      await Promise.all(archivosNota.map((a) => borrarArchivo(a.publicId)));
+      // Luego borrar de Firestore
       await deleteDoc(doc(db, 'notas', notaAEliminar.id));
-      exito('Nota eliminada');
+      exito('Nota y archivos eliminados');
     } catch {
       error('No se pudo eliminar la nota');
     } finally {
@@ -576,26 +586,32 @@ export default function DocumentosScreen() {
                     </Text>
                   )}
 
-                  {/* Links */}
-                  {notaDetalle.links && notaDetalle.links.length > 0 && (
+                  {/* Archivos */}
+                  {notaDetalle.archivos && notaDetalle.archivos.length > 0 && (
                     <View style={{ marginBottom: 20 }}>
                       <Text style={{ color: colors.subtext, fontSize: 13, fontWeight: 'bold', marginBottom: 10 }}>
-                        🔗 Archivos adjuntos ({notaDetalle.links.length})
+                        📎 Archivos adjuntos ({notaDetalle.archivos.length})
                       </Text>
                       <View style={{ gap: 8 }}>
-                        {notaDetalle.links.map((url, idx) => (
-                          <TouchableOpacity
-                            key={idx}
-                            onPress={() => Linking.openURL(url.startsWith('http') ? url : `https://${url}`)}
-                            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#eff6ff', padding: 14, borderRadius: 12 }}
-                          >
-                            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#3b82f6' + '22', justifyContent: 'center', alignItems: 'center' }}>
-                              <Ionicons name="link-outline" size={18} color="#3b82f6" />
-                            </View>
-                            <Text style={{ color: '#3b82f6', fontSize: 14, flex: 1 }} numberOfLines={2}>{url}</Text>
-                            <Ionicons name="open-outline" size={18} color="#3b82f6" />
-                          </TouchableOpacity>
-                        ))}
+                        {notaDetalle.archivos.map((archivo, idx) => {
+                          const { icono, color } = iconoArchivo(archivo.tipo);
+                          return (
+                            <TouchableOpacity
+                              key={idx}
+                              onPress={() => Linking.openURL(archivo.url)}
+                              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: color + '14', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: color + '33' }}
+                            >
+                              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: color + '22', justifyContent: 'center', alignItems: 'center' }}>
+                                <Ionicons name={icono as any} size={20} color={color} />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }} numberOfLines={1}>{archivo.nombre}</Text>
+                                <Text style={{ color: colors.subtext, fontSize: 12 }}>{formatearTamano(archivo.tamano)}</Text>
+                              </View>
+                              <Ionicons name="open-outline" size={20} color={color} />
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
                     </View>
                   )}
@@ -714,58 +730,54 @@ export default function DocumentosScreen() {
                   style={{ backgroundColor: colors.input, padding: 14, borderRadius: 12, color: colors.text, fontSize: 15, minHeight: 110, marginBottom: 16, textAlignVertical: 'top' }}
                 />
 
-                {/* Links */}
-                <Text style={{ color: colors.subtext, fontSize: 13, marginBottom: 6 }}>🔗 Archivos adjuntos (opcional)</Text>
-                <Text style={{ color: colors.subtext, fontSize: 12, marginBottom: 10 }}>
-                  Sube en un servicio gratuito y pega los links aquí.
+                {/* Archivos Cloudinary */}
+                <Text style={{ color: colors.subtext, fontSize: 13, marginBottom: 8 }}>📎 Archivos adjuntos (opcional)</Text>
+
+                <TouchableOpacity
+                  onPress={seleccionarArchivo}
+                  disabled={subiendoArchivo}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: colors.primary + '18', borderWidth: 1.5, borderColor: colors.primary, borderStyle: 'dashed', borderRadius: 14, paddingVertical: 16, marginBottom: 8 }}
+                >
+                  {subiendoArchivo ? (
+                    <>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 15 }}>Subiendo...</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="cloud-upload-outline" size={22} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 15 }}>Seleccionar archivo</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <Text style={{ color: colors.subtext, fontSize: 11, textAlign: 'center', marginBottom: 14 }}>
+                  PDF, Word, Excel, imágenes, txt y más
                 </Text>
 
-                {/* Botones servicios */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                  <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
-                    {SERVICIOS_ARCHIVO.map((srv) => (
-                      <TouchableOpacity
-                        key={srv.label}
-                        onPress={() => Linking.openURL(srv.url)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: srv.color + '18', borderWidth: 1.5, borderColor: srv.color }}
-                      >
-                        <Text style={{ fontSize: 16 }}>{srv.icono}</Text>
-                        <Text style={{ color: srv.color, fontSize: 13, fontWeight: 'bold' }}>{srv.label}</Text>
-                        <Ionicons name="open-outline" size={13} color={srv.color} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-
-                {/* Input link */}
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.input, borderRadius: 12, paddingHorizontal: 14 }}>
-                    <Ionicons name="link-outline" size={18} color={colors.subtext} />
-                    <TextInput
-                      value={linkInput} onChangeText={setLinkInput}
-                      placeholder="Pega el link aquí..." placeholderTextColor={colors.border}
-                      autoCapitalize="none" keyboardType="url" onSubmitEditing={agregarLink}
-                      style={{ flex: 1, padding: 14, color: colors.text, fontSize: 15 }}
-                    />
-                    {linkInput ? <TouchableOpacity onPress={() => setLinkInput('')}><Ionicons name="close-circle" size={18} color={colors.subtext} /></TouchableOpacity> : null}
-                  </View>
-                  <TouchableOpacity onPress={agregarLink} style={{ backgroundColor: colors.primary, width: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="add" size={24} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-
-                {links.length > 0 ? (
-                  <View style={{ gap: 6, marginBottom: 20 }}>
-                    {links.map((url, idx) => (
-                      <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', borderRadius: 10, padding: 10, gap: 8 }}>
-                        <Ionicons name="link-outline" size={16} color="#3b82f6" />
-                        <Text style={{ flex: 1, color: '#3b82f6', fontSize: 13 }} numberOfLines={1}>{url}</Text>
-                        <TouchableOpacity onPress={() => eliminarLink(idx)}><Ionicons name="close-circle" size={18} color="#ef4444" /></TouchableOpacity>
-                      </View>
-                    ))}
+                {archivos.length > 0 ? (
+                  <View style={{ gap: 8, marginBottom: 20 }}>
+                    {archivos.map((archivo, idx) => {
+                      const { icono, color } = iconoArchivo(archivo.tipo);
+                      return (
+                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: color + '14', borderRadius: 12, padding: 12, gap: 10, borderWidth: 1, borderColor: color + '33' }}>
+                          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: color + '22', justifyContent: 'center', alignItems: 'center' }}>
+                            <Ionicons name={icono as any} size={18} color={color} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>{archivo.nombre}</Text>
+                            <Text style={{ color: colors.subtext, fontSize: 11 }}>{formatearTamano(archivo.tamano)}</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => eliminarArchivoLocal(idx)} style={{ padding: 4 }}>
+                            <Ionicons name="close-circle" size={20} color="#ef4444" />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
                   </View>
                 ) : (
-                  <Text style={{ color: colors.subtext, fontSize: 12, marginBottom: 20, textAlign: 'center' }}>Sin links agregados aún</Text>
+                  <Text style={{ color: colors.subtext, fontSize: 12, marginBottom: 20, textAlign: 'center' }}>
+                    Sin archivos adjuntos
+                  </Text>
                 )}
 
                 {/* ── SELECTOR USUARIOS (solo tab compartido) ── */}
