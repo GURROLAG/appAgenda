@@ -3,7 +3,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { collection, deleteDoc, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform,
   Pressable, ScrollView, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { ConfirmModal } from '../../src/components/ConfirmModal';
@@ -19,6 +19,7 @@ interface UsuarioFirestore {
   nombre: string;
   rol: 'admin' | 'usuario';
   activo: boolean;
+  fotoPerfil?: string;
 }
 
 interface ConfirmConfig {
@@ -186,9 +187,20 @@ export default function AdminScreen() {
           <View key={u.uid} style={{ backgroundColor: colors.card, borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: darkMode ? 0.3 : 0.08, shadowRadius: 6, elevation: 3, opacity: u.activo ? 1 : 0.55 }}>
             {/* Info */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: u.rol === 'admin' ? colors.primary : colors.border, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
-                <Ionicons name={u.rol === 'admin' ? 'shield-checkmark' : 'person'} size={24} color={u.rol === 'admin' ? '#fff' : colors.subtext} />
-              </View>
+              {u.fotoPerfil ? (
+                <View style={{ marginRight: 12, position: 'relative' }}>
+                  <Image source={{ uri: u.fotoPerfil }} style={{ width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: u.rol === 'admin' ? colors.primary : colors.border }} />
+                  {u.rol === 'admin' && (
+                    <View style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: colors.primary, borderRadius: 10, width: 18, height: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                      <Ionicons name="shield-checkmark" size={10} color="#fff" />
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: u.rol === 'admin' ? colors.primary : colors.border, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
+                  <Ionicons name={u.rol === 'admin' ? 'shield-checkmark' : 'person'} size={24} color={u.rol === 'admin' ? '#fff' : colors.subtext} />
+                </View>
+              )}
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                   <Text style={{ fontWeight: 'bold', fontSize: 16, color: colors.text }}>{u.nombre}</Text>
