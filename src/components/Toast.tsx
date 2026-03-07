@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Text, View } from 'react-native';
+import { r } from '../utils/responsive';
 
 type ToastTipo = 'success' | 'error' | 'warning' | 'info';
 
@@ -63,11 +64,11 @@ export function Toast({ mensaje, tipo, visible, onHide }: ToastProps) {
     >
       <View style={{
         backgroundColor: config.bg,
-        borderRadius: 16,
+        borderRadius: r.radius,
         padding: 16,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: r.gap,
         borderWidth: 1,
         borderColor: config.border,
         shadowColor: config.color,
@@ -77,7 +78,7 @@ export function Toast({ mensaje, tipo, visible, onHide }: ToastProps) {
         elevation: 8,
       }}>
         <Ionicons name={config.icono as any} size={28} color={config.color} />
-        <Text style={{ flex: 1, color: config.color, fontSize: 15, fontWeight: '600', lineHeight: 20 }}>
+        <Text style={{ flex: 1, color: config.color, fontSize: r.body, fontWeight: '600', lineHeight: 20 }}>
           {mensaje}
         </Text>
       </View>

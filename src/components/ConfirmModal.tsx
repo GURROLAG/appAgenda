@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, Text, View } from 'react-native';
 import { useTema } from '../context/TemaContext';
+import { r } from '../utils/responsive';
 
 interface ConfirmModalProps {
   visible: boolean;
@@ -39,25 +40,25 @@ export function ConfirmModal({
           </View>
         </View>
 
-        <Text style={{ fontSize: 20, fontWeight: 'bold', color: colors.text, textAlign: 'center', marginBottom: 10 }}>
+        <Text style={{ fontSize: r.h2, fontWeight: 'bold', color: colors.text, textAlign: 'center', marginBottom: 10 }}>
           {titulo}
         </Text>
-        <Text style={{ fontSize: 15, color: colors.subtext, textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
+        <Text style={{ fontSize: r.body, color: colors.subtext, textAlign: 'center', marginBottom: 28, lineHeight: 22 }}>
           {mensaje}
         </Text>
 
-        <View style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ flexDirection: 'row', gap: r.gap }}>
           <Pressable
             onPress={onCancelar}
-            style={({ pressed }) => ({ flex: 1, paddingVertical: 16, borderRadius: 14, alignItems: 'center', backgroundColor: pressed ? colors.border : colors.input, borderWidth: 1, borderColor: colors.border })}
+            style={({ pressed }) => ({ flex: 1, paddingVertical: r.inputPadV, borderRadius: r.radius, alignItems: 'center', backgroundColor: pressed ? colors.border : colors.input, borderWidth: 1, borderColor: colors.border })}
           >
-            <Text style={{ color: colors.text, fontWeight: 'bold', fontSize: 16 }}>{textoCancelar}</Text>
+            <Text style={{ color: colors.text, fontWeight: 'bold', fontSize: r.inputFontSz }}>{textoCancelar}</Text>
           </Pressable>
           <Pressable
             onPress={onConfirmar}
-            style={({ pressed }) => ({ flex: 1, paddingVertical: 16, borderRadius: 14, alignItems: 'center', backgroundColor: pressed ? config.color + 'dd' : config.color })}
+            style={({ pressed }) => ({ flex: 1, paddingVertical: r.inputPadV, borderRadius: r.radius, alignItems: 'center', backgroundColor: pressed ? config.color + 'dd' : config.color })}
           >
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>{textoConfirmar}</Text>
+            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: r.inputFontSz }}>{textoConfirmar}</Text>
           </Pressable>
         </View>
       </View>

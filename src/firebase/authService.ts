@@ -1,5 +1,6 @@
 import {
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   UserCredential,
@@ -8,25 +9,24 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth } from './firebaseConfig';
 import { db } from './firestore';
 
-// Registrar nuevo usuario - siempre con rol "usuario"
+// Registrar nuevo usuario
 export const registrarUsuario = async (
   email: string,
   password: string,
-  nombre: string = ''
+  nombre: string
 ): Promise<UserCredential> => {
-  const credencial = await createUserWithEmailAndPassword(auth, email, password);
-
-  await setDoc(doc(db, 'usuarios', credencial.user.uid), {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  await setDoc(doc(db, 'usuarios', cred.user.uid), {
+    nombre,
     email,
-    nombre: nombre || email.split('@')[0],
     rol: 'usuario',
     activo: true,
     creadoEn: serverTimestamp(),
   });
-
-  return credencial;
+  return cred;
 };
 
+// Iniciar sesión
 export const iniciarSesion = async (
   email: string,
   password: string
@@ -34,6 +34,12 @@ export const iniciarSesion = async (
   return await signInWithEmailAndPassword(auth, email, password);
 };
 
+// Cerrar sesión
 export const cerrarSesion = async (): Promise<void> => {
   return await signOut(auth);
+};
+
+// Restablecer contraseña
+export const restablecerPassword = async (email: string): Promise<void> => {
+  return await sendPasswordResetEmail(auth, email);
 };
