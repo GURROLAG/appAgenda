@@ -37,7 +37,7 @@ export default function TabsLayout() {
         name="clientes"
         options={{
           title: 'Clientes',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -60,6 +60,12 @@ export default function TabsLayout() {
           title: 'Admin',
           tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark-outline" size={size} color={color} />,
           tabBarItemStyle: esAdmin ? {} : { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="expedientes"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

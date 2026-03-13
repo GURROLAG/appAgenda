@@ -14,20 +14,21 @@ export default function RootLayout() {
   const [usuario, setUsuario] = useState<any>(undefined);
   const router = useRouter();
   const segments = useSegments();
-  const notifListener = useRef<any>();
-  const responseListener = useRef<any>();
+  const notifListener = useRef<any>(null);
+  const responseListener = useRef<any>(null);
 
   // Solicitar permisos al arrancar
   useEffect(() => {
     solicitarPermisosNotificaciones();
 
     // Listener para cuando llega una notificación con la app abierta
-    notifListener.current = Notifications.addNotificationReceivedListener((_notification) => {
+    notifListener.current = Notifications.addNotificationReceivedListener((notification) => {
       // La notificación se muestra automáticamente por el handler global
     });
 
     // Listener para cuando el usuario toca la notificación
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((_response) => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
       // Aquí podrías navegar al evento si quisieras
     });
 

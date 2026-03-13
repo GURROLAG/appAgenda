@@ -11,7 +11,7 @@ import {
   Pressable, ScrollView, Switch, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
-import { Calendar as BigCalendar, Event } from 'react-native-big-calendar';
+import { Calendar as BigCalendar, ICalendarEventBase } from 'react-native-big-calendar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ConfirmModal } from '../../src/components/ConfirmModal';
 import { Toast, useToast } from '../../src/components/Toast';
@@ -24,6 +24,8 @@ import {
   cancelarNotificacion, programarNotificacion,
 } from '../../src/utils/notificaciones';
 import { isTablet, r } from '../../src/utils/responsive';
+
+type CalendarEvent = ICalendarEventBase & { color?: string };
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -314,7 +316,7 @@ export default function HomeScreen() {
     ? eventosActivos.filter((e) => e.date === fechaSeleccionada)
     : [];
 
-  const eventosCalendar: Event[] = eventosActivos.map((e) => {
+  const eventosCalendar: CalendarEvent[] = eventosActivos.map((e) => {
     if (!e.date) return null;
     const start = parseLocalDate(e.date);
     if (isNaN(start.getTime())) return null;
@@ -326,7 +328,7 @@ export default function HomeScreen() {
     const end = new Date(start);
     end.setHours(start.getHours() + 1);
     return { id: e.id, title: e.title ?? 'Evento', start, end, color: e.color || coloresDisponibles[0] };
-  }).filter(Boolean) as Event[];
+  }).filter(Boolean) as CalendarEvent[];
 
   const toggleUsuario = (uid: string) =>
     setCompartidoCon((prev) => prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]);
@@ -391,20 +393,11 @@ export default function HomeScreen() {
           events={eventosCalendar} height={420} mode="month" swipeEnabled={false} locale="es" date={mesVisible}
           onPressCell={(date) => setFechaSeleccionada(toLocalDateString(date))}
           headerContainerStyle={{ backgroundColor: colors.background }}
-          headerTextStyle={{ color: colors.text }}
-          dayHeaderTextStyle={{ color: colors.text }}
-          hourStyle={{ color: colors.text }}
-          eventCellStyle={(event) => ({ backgroundColor: event.color, color: '#fff', borderRadius: 8, padding: 2 })}
-          monthCellStyle={({ date }) => {
-            const iso = toLocalDateString(date);
-            const sel = fechaSeleccionada === iso;
-            return { backgroundColor: sel ? colors.primary : darkMode ? '#2a2a2a' : '#e0e0e0', borderRadius: sel ? 25 : 8, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' };
-          }}
-          monthCellTextStyle={({ date }) => {
-            const iso = toLocalDateString(date);
-            const sel = fechaSeleccionada === iso;
-            return { color: sel ? '#fff' : colors.text, fontWeight: sel ? 'bold' : 'normal', textAlign: 'center' };
-          }}
+          headerContentStyle={{ backgroundColor: colors.background }}
+          dayHeaderStyle={{ backgroundColor: colors.background }}
+          eventCellStyle={(event) => ({ backgroundColor: event.color, borderRadius: 8, padding: 2 })}
+          calendarCellTextStyle={{ color: colors.text }}
+          calendarCellStyle={{ borderColor: colors.border }}
         />
 
         {/* BOTÓN NUEVO EVENTO */}

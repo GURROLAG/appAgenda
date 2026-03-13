@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "homeIndicatorAutoHidden": true
     },
     "android": {
       "package": "com.tuempresa.agendaapp",
@@ -20,7 +21,16 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "pan",
+      "navigationBarColor": "#00000000",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "static",
@@ -45,7 +55,9 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#1e90ff"
+          "color": "#1e90ff",
+          "defaultChannel": "recordatorios",
+          "useNextNotificationsApi": true
         }
       ]
     ],
